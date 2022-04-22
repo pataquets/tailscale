@@ -50,6 +50,7 @@ relay node.
 		fs.BoolVar(&pingArgs.verbose, "verbose", false, "verbose output")
 		fs.BoolVar(&pingArgs.untilDirect, "until-direct", true, "stop once a direct path is established")
 		fs.BoolVar(&pingArgs.tsmp, "tsmp", false, "do a TSMP-level ping (through IP + wireguard, but not involving host OS stack)")
+		fs.BoolVar(&pingArgs.icmp, "icmp", false, "do a ICMP-level ping (through IP + wireguard. Remote host OS stack only)")
 		fs.IntVar(&pingArgs.num, "c", 10, "max number of pings to send")
 		fs.DurationVar(&pingArgs.timeout, "timeout", 5*time.Second, "timeout before giving up on a ping")
 		return fs
@@ -61,7 +62,18 @@ var pingArgs struct {
 	untilDirect bool
 	verbose     bool
 	tsmp        bool
+	icmp        bool
 	timeout     time.Duration
+}
+
+func pingType() string {
+	if pingArgs.tsmp {
+		return "TSMP"
+	}
+	if pingArgs.icmp {
+		return "ICMP"
+	}
+	return "disco"
 }
 
 func runPing(ctx context.Context, args []string) error {
@@ -112,7 +124,7 @@ func runPing(ctx context.Context, args []string) error {
 	anyPong := false
 	for {
 		n++
-		bc.Ping(ip, pingArgs.tsmp)
+		bc.Ping(ip, pingType())
 		timer := time.NewTimer(pingArgs.timeout)
 		select {
 		case <-timer.C:
@@ -133,10 +145,10 @@ func runPing(ctx context.Context, args []string) error {
 			if pr.DERPRegionID != 0 {
 				via = fmt.Sprintf("DERP(%s)", pr.DERPRegionCode)
 			}
-			if pingArgs.tsmp {
+			if via == "" {
 				// TODO(bradfitz): populate the rest of ipnstate.PingResult for TSMP queries?
-				// For now just say it came via TSMP.
-				via = "TSMP"
+				// For now just say which protocol it used.
+				via = pingType()
 			}
 			anyPong = true
 			extra := ""
@@ -144,7 +156,7 @@ func runPing(ctx context.Context, args []string) error {
 				extra = fmt.Sprintf(", %d", pr.PeerAPIPort)
 			}
 			printf("pong from %s (%s%s) via %v in %v\n", pr.NodeName, pr.NodeIP, extra, via, latency)
-			if pingArgs.tsmp {
+			if pingArgs.tsmp || pingArgs.icmp {
 				return nil
 			}
 			if pr.Endpoint != "" && pingArgs.untilDirect {
