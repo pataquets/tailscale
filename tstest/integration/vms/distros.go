@@ -6,6 +6,7 @@ package vms
 
 import (
 	_ "embed"
+	"encoding/json"
 	"log"
 
 	"github.com/tailscale/hujson"
@@ -52,11 +53,16 @@ func (d *Distro) InstallPre() string {
 var distroData string
 
 var Distros []Distro = func() []Distro {
-	var result []Distro
-	err := hujson.Unmarshal([]byte(distroData), &result)
+	ast, err := hujson.Parse([]byte(distroData))
 	if err != nil {
 		log.Fatalf("error decoding distros: %v", err)
 	}
+	ast.Standardize()
+	b := ast.Pack()
 
+	var result []Distro
+	if err := json.Unmarshal(b, &result); err != nil {
+		log.Fatalf("error decoding distros: %v", err)
+	}
 	return result
 }()
